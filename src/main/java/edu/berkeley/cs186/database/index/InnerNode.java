@@ -52,7 +52,7 @@ class InnerNode extends BPlusNode {
     InnerNode(BPlusTreeMetadata metadata, BufferManager bufferManager, List<DataBox> keys,
               List<Long> children, LockContext treeContext) {
         this(metadata, bufferManager, bufferManager.fetchNewPage(treeContext, metadata.getPartNum()),
-             keys, children, treeContext);
+                keys, children, treeContext);
     }
 
     /**
@@ -77,12 +77,14 @@ class InnerNode extends BPlusNode {
     }
 
     // Core API ////////////////////////////////////////////////////////////////
-    // See BPlusNode.get.
+    // n.get(k) returns the leaf node on which k may reside when queried from n.
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
 
-        return null;
+        // 递归调用子节点的 get 方法，直到叶节点get()直接返回自身.
+        return getChild(numLessThanEqual(key, keys)).get(key);
+
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -91,7 +93,7 @@ class InnerNode extends BPlusNode {
         assert(children.size() > 0);
         // TODO(proj2): implement
 
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
@@ -99,13 +101,47 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
 
-        return Optional.empty();
+//        check the result of put in leaf node, if no overflow in the inner node
+        Optional<Pair<DataBox, Long>> result = get(key).put(key, rid);
+        if (!result.isPresent()){
+            return Optional.empty();
+        }
+
+//      (key, pageNum) pair of the split node removing/copying from children
+        Pair<DataBox, Long> splitNode = result.get();
+
+//      Insert the split node into the current node
+        int index = InnerNode.numLessThan(splitNode.getFirst(), keys);
+        keys.add(index, splitNode.getFirst());
+        children.add(index + 1, splitNode.getSecond());
+
+//        if no overflow in inner node
+        if (keys.size() <  metadata.getOrder() * 2){
+            sync();
+            return Optional.empty();
+        }
+
+//        if overflow, split the node and return (split_key, right_node_page_num) of right node
+        int splitKeyIndex = (keys.size() - 1) / 2;
+        DataBox splitKey = keys.get(splitKeyIndex);
+
+//        right node info
+        List<DataBox> rightNodeKeys = keys.subList(splitKeyIndex + 1, keys.size());
+        List<Long> rightNodeChildren = children.subList(splitKeyIndex + 1, children.size());
+
+//      left node info
+        keys = keys.subList(0, splitKeyIndex);
+        children = children.subList(0, splitKeyIndex + 1);
+
+        InnerNode rightNode = new InnerNode(metadata, bufferManager, rightNodeKeys, rightNodeChildren, treeContext);
+        sync();
+        return  Optional.of(new Pair<>(splitKey, rightNode.getPage().getPageNum())) ;
     }
 
     // See BPlusNode.bulkLoad.
     @Override
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
-            float fillFactor) {
+                                                  float fillFactor) {
         // TODO(proj2): implement
 
         return Optional.empty();
@@ -116,6 +152,10 @@ class InnerNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(proj2): implement
 
+//        get the children where the removing key is in
+        BPlusNode childNode = get(key);
+        childNode.remove(key);
+        sync();
         return;
     }
 
@@ -211,6 +251,7 @@ class InnerNode extends BPlusNode {
      * If we're searching the tree for value c, then we need to visit child 3.
      * Not coincidentally, there are also 3 values less than or equal to c (i.e.
      * a, b, c).
+     * ps. 是否需要equal见查找规则
      */
     static <T extends Comparable<T>> int numLessThanEqual(T x, List<T> ys) {
         int n = 0;
@@ -286,7 +327,7 @@ class InnerNode extends BPlusNode {
             long childPageNum = child.getPage().getPageNum();
             lines.add(child.toDot());
             lines.add(String.format("  \"node%d\":f%d -> \"node%d\";",
-                                    pageNum, i, childPageNum));
+                    pageNum, i, childPageNum));
         }
 
         return String.join("\n", lines);
@@ -370,8 +411,8 @@ class InnerNode extends BPlusNode {
         }
         InnerNode n = (InnerNode) o;
         return page.getPageNum() == n.page.getPageNum() &&
-               keys.equals(n.keys) &&
-               children.equals(n.children);
+                keys.equals(n.keys) &&
+                children.equals(n.children);
     }
 
     @Override
