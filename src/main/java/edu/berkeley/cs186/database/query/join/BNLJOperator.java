@@ -40,7 +40,7 @@ public class BNLJOperator extends JoinOperator {
         int numLeftPages = getLeftSource().estimateStats().getNumPages();
         int numRightPages = getRightSource().estimateIOCost();
         return ((int) Math.ceil((double) numLeftPages / (double) usableBuffers)) * numRightPages +
-               getLeftSource().estimateIOCost();
+                getLeftSource().estimateIOCost();
     }
 
     /**
@@ -86,8 +86,15 @@ public class BNLJOperator extends JoinOperator {
          * You may find QueryOperator#getBlockIterator useful here.
          * Make sure you pass in the correct schema to this method.
          */
+//
         private void fetchNextLeftBlock() {
             // TODO(proj3_part1): implement
+//            fetch the next non-empty block of left table pages from leftSourceIterator
+            if (leftSourceIterator.hasNext()) {
+                leftBlockIterator = QueryOperator.getBlockIterator(leftSourceIterator, getLeftSource().getSchema(), numBuffers - 2);
+                leftBlockIterator.markNext();
+                leftRecord = leftBlockIterator.next();
+            }
         }
 
         /**
@@ -101,8 +108,13 @@ public class BNLJOperator extends JoinOperator {
          * You may find QueryOperator#getBlockIterator useful here.
          * Make sure you pass in the correct schema to this method.
          */
+//       从右表中获取一页数据，设置 rightPageIterator 以便能够遍历该页的所有记录。如果右表还有页数可用，这个方法应该加载下一页。
         private void fetchNextRightPage() {
             // TODO(proj3_part1): implement
+            if (rightSourceIterator.hasNext()){
+                rightPageIterator = QueryOperator.getBlockIterator(rightSourceIterator, getRightSource().getSchema(), 1);
+                rightPageIterator.markNext();
+            }
         }
 
         /**
@@ -115,7 +127,30 @@ public class BNLJOperator extends JoinOperator {
          */
         private Record fetchNextRecord() {
             // TODO(proj3_part1): implement
-            return null;
+            Record rightRecord;
+            while (true){
+                if (rightPageIterator.hasNext()){
+
+                } else if (leftBlockIterator.hasNext()) {
+                    rightPageIterator.reset();
+                    leftRecord = leftBlockIterator.next();
+                } else if (rightSourceIterator.hasNext()) {
+                    leftBlockIterator.reset();
+                    leftRecord = leftBlockIterator.next();
+                    fetchNextRightPage();
+                } else if (leftSourceIterator.hasNext()) {
+                    rightSourceIterator.reset();
+                    fetchNextRightPage();
+                    fetchNextLeftBlock();
+                } else {
+                    return null;
+                }
+
+                rightRecord = rightPageIterator.next();
+                if (compare(leftRecord, rightRecord) == 0){
+                    return leftRecord.concat(rightRecord);
+                }
+            }
         }
 
         /**
