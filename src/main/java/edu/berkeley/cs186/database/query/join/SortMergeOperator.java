@@ -140,7 +140,55 @@ public class SortMergeOperator extends JoinOperator {
          */
         private Record fetchNextRecord() {
             // TODO(proj3_part1): implement
-            return null;
+            Record result = new Record();
+            if (leftRecord == null ) {
+                // The left record was empty, nothing to fetch
+                return null;
+            }
+            while(true) {
+                if (!marked){
+                    while (compare(leftRecord, rightRecord) < 0){
+                        if (!leftIterator.hasNext()){
+                            return null;
+                        }
+                        leftRecord = leftIterator.next();
+                    }
+                    while (compare(leftRecord, rightRecord) > 0){
+                        if (!rightIterator.hasNext()){
+                            return null;
+                        }
+                        rightRecord = rightIterator.next();
+                    }
+                    rightIterator.markPrev();
+                    marked = true;
+                }
+
+                if (compare(leftRecord, rightRecord) == 0) {
+                    result = leftRecord.concat(rightRecord);
+                    if (rightIterator.hasNext()){
+                        rightRecord = rightIterator.next();
+                    }else {
+//                        no more right records, advance left to check if equi-value record
+                        rightIterator.reset();
+                        rightRecord = rightIterator.next();
+                        if (leftIterator.hasNext()){
+                            leftRecord = leftIterator.next();
+                        }else {
+                            leftRecord = null;
+                        }
+                    }
+                    return result;
+                }  else {
+                    rightIterator.reset();
+                    rightRecord = rightIterator.next();
+                    if (leftIterator.hasNext()){
+                        leftRecord = leftIterator.next();
+                    }else {
+                        return null;
+                    }
+                    marked = false;
+                }
+            }
         }
 
         @Override
